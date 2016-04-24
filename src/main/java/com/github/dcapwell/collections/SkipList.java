@@ -1,7 +1,10 @@
 package com.github.dcapwell.collections;
 
 import java.util.Comparator;
+import java.util.LinkedList;
 import java.util.Random;
+import java.util.Stack;
+import java.util.function.Consumer;
 
 public final class SkipList<A> {
     private final Comparator<A> comparator;
@@ -16,6 +19,50 @@ public final class SkipList<A> {
 
     public static <A extends Comparable<A>> SkipList<A> create() {
         return new SkipList<A>(Comparator.naturalOrder());
+    }
+
+    public void search(A lower, A upper, Consumer<A> fn) {
+        // if lower is larger than upper, so user wants results in reverse order
+        boolean reverse = comparator.compare(lower, upper) > 0;
+
+        if (!reverse)
+            doSearch(lower, upper, fn);
+        else {
+            // store results in a stack in order to flip the order sent to fn
+            LinkedList<A> stack = new LinkedList<>();
+            doSearch(upper, lower, stack::add);
+            stack.descendingIterator().forEachRemaining(fn);
+        }
+    }
+
+    private void doSearch(A lower, A upper, Consumer<A> fn) {
+        Comparator<A> cmp = this.comparator;
+        for (Node<A> c = head, r = c.right; ; ) {
+            if (r != null) {
+                // as long as the value is larger than right, keep moving to the right
+                if (cmp.compare(lower, r.value) > 0) {
+                    // key is larger, so keep searching
+                    c = r;
+                    r = r.right;
+                    continue;
+                }
+            }
+            // at the most right we can get at this level, attempt to move down
+            if (c.down != null) {
+                c = c.down;
+                r = c.right;
+                continue;
+            }
+            if (r != null) {
+                if (cmp.compare(r.value, upper) <= 0) {
+                    fn.accept(r.value);
+                    c = r;
+                    r = r.right;
+                    continue;
+                }
+            }
+            return;
+        }
     }
 
     public boolean add(A value) {
@@ -53,6 +100,7 @@ public final class SkipList<A> {
         }
         // a new node was inserted so perform a coin-flip to see how many levels should have the value
         int targetLevel = 0;
+        Random rand = this.rand;
         while (rand.nextBoolean())
             targetLevel++;
         if (targetLevel > 0) {
@@ -68,26 +116,29 @@ public final class SkipList<A> {
             nodes[0] = n;
             for (int i = 1; i <= targetLevel; i++)
                 nodes[i] = new Node(value, null, nodes[i - 1]);
-            out: while (true) {
-                int level = head.level;
-                for(Node<A> c = head, r = c.right;;) {
-                    if (r != null) {
-                        // as long as the value is larger than right, keep moving to the right
-                        if (cmp.compare(value, r.value) > 0) {
-                            // key is larger, so keep searching
-                            c = r;
-                            r = r.right;
-                            continue;
-                        }
+            int level = head.level;
+            for(Node<A> c = head, r = c.right;;) {
+                if (r != null) {
+                    // as long as the value is larger than right, keep moving to the right
+                    if (cmp.compare(value, r.value) > 0) {
+                        // key is larger, so keep searching
+                        c = r;
+                        r = r.right;
+                        continue;
                     }
-                    if (targetLevel == level) {
-                        // insert the node here
-                        Node node = nodes[targetLevel];
-                        node.right = c.right;
-                        c.right = node;
-                    }
-                    if (--targetLevel > 0)
-                        break  out;
+                }
+                if (targetLevel == level) {
+                    // insert the node here
+                    Node node = nodes[targetLevel];
+                    node.right = c.right;
+                    c.right = node;
+                }
+                if (c.down != null) {
+                    c = c.down;
+                    r = c.right;
+                    level--;
+                } else {
+                    break;
                 }
             }
         }

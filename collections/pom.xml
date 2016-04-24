@@ -18,4 +18,47 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-source-plugin</artifactId>
+        <version>2.4</version>
+        <executions>
+          <execution>
+            <id>attach-sources</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>jar-no-fork</goal>
+            </goals>
+            <configuration>
+              <includes>
+                <include>**/*</include>
+              </includes>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>com.carrotsearch</groupId>
+        <artifactId>hppc-template-processor</artifactId>
+        <version>0.7.1</version>
+        <executions>
+          <execution>
+            <id>generate-sources</id>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>template-processor</goal>
+            </goals>
+            <configuration>
+              <incremental>true</incremental>
+              <attachSources>main</attachSources>
+              <templatesDir>${project.basedir}/src/main/templates</templatesDir>
+              <outputDir>${project.build.directory}/generated-sources/main/java</outputDir>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>

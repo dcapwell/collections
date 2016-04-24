@@ -1,19 +1,19 @@
 package com.github.dcapwell.collections;
 
-public final class Tuple2<A, B> {
-    private final A _1;
-    private final B _2;
+public final class KTypeVTypeTuple<KType, VType> {
+    private final KType _1;
+    private final VType _2;
 
-    public Tuple2(A a, B b) {
+    public KTypeVTypeTuple(KType a, VType b) {
         _1 = a;
         _2 = b;
     }
 
-    public A get1() {
+    public KType get1() {
         return _1;
     }
 
-    public B get2() {
+    public VType get2() {
         return _2;
     }
 

@@ -6,8 +6,9 @@
   <packaging>pom</packaging>
   <version>0.1.0-SNAPSHOT</version>
   <name>collections parent</name>
-	<modules>
+  <modules>
     <module>collections</module>
+    <module>collections-benchmarks</module>
   </modules>
   <build>
     <plugins>

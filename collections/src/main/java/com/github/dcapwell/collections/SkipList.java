@@ -14,7 +14,7 @@ public final class SkipList<A> {
     public SkipList(Comparator<A> comparator) {
         this.comparator = comparator;
         this.rand = new Random();
-        this.head = new HeadNode<>(0, null, null, null);
+        clear();
     }
 
     public static <A extends Comparable<A>> SkipList<A> create() {
@@ -143,6 +143,10 @@ public final class SkipList<A> {
             }
         }
         return true;
+    }
+
+    public void clear() {
+        this.head = new HeadNode<>(0, null, null, null);
     }
 
     private static final class HeadNode<A> extends Node<A> {

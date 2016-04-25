@@ -1,8 +1,10 @@
 package com.github.dcapwell.collections;
 
-import java.util.Iterator;
-import java.util.function.Function;
+import com.github.dcapwell.collections.specialized.Specialized;
 
+import java.util.Iterator;
+
+@Specialized
 public abstract class ConsList<A> implements Iterable<A> {
     private ConsList() {}
 
@@ -23,8 +25,8 @@ public abstract class ConsList<A> implements Iterable<A> {
 
     public abstract ConsList<A> cons(ConsList<A> next);
 
-    public abstract <B> ConsList<B> map(Function<A, B> fn);
-    public abstract <B> ConsList<B> flatMap(Function<A, ConsList<B>> fn);
+    public abstract <B> ConsList<B> map(Fn1<A, B> fn);
+    public abstract <B> ConsList<B> flatMap(Fn1<A, ConsList<B>> fn);
 
     @Override
     public abstract int hashCode();
@@ -64,12 +66,12 @@ public abstract class ConsList<A> implements Iterable<A> {
         }
 
         @Override
-        public <B> ConsList<B> map(Function<A, B> fn) {
+        public <B> ConsList<B> map(Fn1<A, B> fn) {
             return new Cons<>(fn.apply(value), parent.map(fn));
         }
 
         @Override
-        public <B> ConsList<B> flatMap(Function<A, ConsList<B>> fn) {
+        public <B> ConsList<B> flatMap(Fn1<A, ConsList<B>> fn) {
             return fn.apply(value).cons(parent.flatMap(fn));
         }
 
@@ -107,12 +109,12 @@ public abstract class ConsList<A> implements Iterable<A> {
         }
 
         @Override
-        public <B> ConsList<B> map(Function<Object, B> fn) {
+        public <B> ConsList<B> map(Fn1<Object, B> fn) {
             return (ConsList<B>) this;
         }
 
         @Override
-        public <B> ConsList<B> flatMap(Function<Object, ConsList<B>> fn) {
+        public <B> ConsList<B> flatMap(Fn1<Object, ConsList<B>> fn) {
             return (ConsList<B>) this;
         }
 

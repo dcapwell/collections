@@ -22,14 +22,14 @@ import java.util.stream.Collectors;
 
 @AutoService(Processor.class)
 public class SpecializedProcessor extends AbstractProcessor {
-    private static final ImmutableMap<Type, TypeKind> NUM_TO_TYPE =
-            ImmutableMap.<Type, TypeKind>builder()
-                    .put(Type.BYTE, TypeKind.BYTE)
-                    .put(Type.SHORT, TypeKind.SHORT)
-                    .put(Type.INT, TypeKind.INT)
-                    .put(Type.LONG, TypeKind.LONG)
-                    .put(Type.FLOAT, TypeKind.FLOAT)
-                    .put(Type.DOUBLE, TypeKind.DOUBLE)
+    private static final ImmutableMap<Type, TypeName> NUM_TO_TYPE =
+            ImmutableMap.<Type, TypeName>builder()
+                    .put(Type.BYTE, TypeName.BYTE)
+                    .put(Type.SHORT, TypeName.SHORT)
+                    .put(Type.INT, TypeName.INT)
+                    .put(Type.LONG, TypeName.LONG)
+                    .put(Type.FLOAT, TypeName.FLOAT)
+                    .put(Type.DOUBLE, TypeName.DOUBLE)
                     .build();
     private Types typeUtils;
     private Elements elementUtils;
@@ -66,9 +66,9 @@ public class SpecializedProcessor extends AbstractProcessor {
             for (int i = 0, size = tpSize; i < size; i++)
                 paramTypes[i] = Sets.newEnumSet(Arrays.asList(specialized.types()), Type.class);
             for (List<Type> group : Sets.cartesianProduct(Arrays.asList(paramTypes))) {
-                LinkedHashMap<TypeMirror, TypeKind> sub = Maps.newLinkedHashMapWithExpectedSize(tpSize);
+                LinkedHashMap<String, TypeName> sub = Maps.newLinkedHashMapWithExpectedSize(tpSize);
                 for (int i = 0; i < group.size(); i++)
-                    sub.put(typeParameters.get(i).asType(), NUM_TO_TYPE.get(group.get(i)));
+                    sub.put(typeParameters.get(i).asType().toString(), NUM_TO_TYPE.get(group.get(i)));
 
                 try {
                     JavaFile javaFile = createSource(outterClass, sub);
@@ -85,7 +85,7 @@ public class SpecializedProcessor extends AbstractProcessor {
         return true;
     }
 
-    private JavaFile createSource(TypeElement e, LinkedHashMap<TypeMirror, TypeKind> typeSub) {
+    private JavaFile createSource(TypeElement e, LinkedHashMap<String, TypeName> typeSub) {
         String name = createClassName(e, typeSub);
         TypeSpec.Builder spec = e.getKind() == ElementKind.CLASS? TypeSpec.classBuilder(name) : TypeSpec.interfaceBuilder(name);
         spec.addModifiers(e.getModifiers().toArray(new Modifier[0]));
@@ -102,32 +102,20 @@ public class SpecializedProcessor extends AbstractProcessor {
         return javaFile;
     }
 
-    private static String createClassName(TypeElement e, LinkedHashMap<TypeMirror, TypeKind> typeSub) {
+    private static String createClassName(TypeElement e, LinkedHashMap<?, TypeName> typeSub) {
         StringBuilder prefix = new StringBuilder();
-        typeSub.values().forEach(n -> prefix.append(className(n)));
+        typeSub.values().forEach(n -> prefix.append(((ClassName) n.box()).simpleName()));
         return prefix.toString() + e.getSimpleName();
     }
 
-    private static String className(TypeKind typeKind) {
-        switch (typeKind) {
-            case BYTE: return "Byte";
-            case SHORT: return "Short";
-            case INT: return "Int";
-            case LONG: return "Long";
-            case FLOAT: return "Float";
-            case DOUBLE: return "Double";
-            default: throw new IllegalArgumentException("Unknown type: " + typeKind);
-        }
-    }
-
-    private MethodSpec createMethod(ExecutableElement method, LinkedHashMap<TypeMirror, TypeKind> typeSub) {
+    private MethodSpec createMethod(ExecutableElement method, LinkedHashMap<String, TypeName> typeSub) {
         MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(method.getSimpleName().toString());
         methodBuilder.addModifiers(method.getModifiers().toArray(new Modifier[0]));
         if (method.getKind() != ElementKind.CONSTRUCTOR)
-            methodBuilder.returns(TypeName.get(replace(method.getReturnType(), typeSub, method)));
+            methodBuilder.returns(replace(method.getReturnType(), typeSub, method));
 
         for (VariableElement parameter : method.getParameters()) {
-            TypeName type = TypeName.get(replace(parameter.asType(), typeSub, parameter));
+            TypeName type = replace(parameter.asType(), typeSub, parameter);
             String name = parameter.getSimpleName().toString();
             Set<Modifier> parameterModifiers = parameter.getModifiers();
             ParameterSpec.Builder parameterBuilder = ParameterSpec.builder(type, name)
@@ -142,53 +130,51 @@ public class SpecializedProcessor extends AbstractProcessor {
         for (TypeMirror thrownType : method.getThrownTypes()) {
             methodBuilder.addException(TypeName.get(thrownType));
         }
-        methodBuilder.addTypeVariables(method.getTypeParameters().stream().<TypeVariableName>map(TypeVariableName::get).collect(Collectors.toList()));
+        methodBuilder.addTypeVariables(method.getTypeParameters().stream().filter(e -> !typeSub.containsKey(e.toString())).<TypeVariableName>map(TypeVariableName::get).collect(Collectors.toList()));
+
         return methodBuilder.build();
     }
 
-    private TypeMirror replace(TypeMirror mirror, LinkedHashMap<TypeMirror, TypeKind> typeSub, Element parameter) {
+    private TypeName replace(TypeMirror mirror, LinkedHashMap<String, TypeName> typeSub, Element parameter) {
         switch (mirror.getKind()) {
-            case ARRAY: return typeUtils.getArrayType(replace(((ArrayType) mirror).getComponentType(), typeSub, parameter));
+            case ARRAY: return ArrayTypeName.of(replace(((ArrayType) mirror).getComponentType(), typeSub, parameter));
             case DECLARED: {
                 DeclaredType dt = (DeclaredType) mirror;
-                List<TypeMirror> replaced = new ArrayList<>(dt.getTypeArguments().size());
-                List<TypeMirror> remaining = new ArrayList<>();
+                List<TypeName> replaced = new ArrayList<>();
+                List<TypeName> remaining = new ArrayList<>();
                 for (TypeMirror t : dt.getTypeArguments()) {
-                    TypeMirror r = replace(t, typeSub, parameter);
-                    if (typeUtils.isSameType(t, r)) {
-                        // got the same type back
-                        remaining.add(t);
-                    } else {
+                    TypeName r = replace(t, typeSub, parameter);
+                    if (t instanceof TypeVariable && typeSub.containsKey(t.toString())) {
                         replaced.add(r);
+                    } else {
+                        remaining.add(r);
                     }
                 }
                 if (replaced.isEmpty()) {
+                    messager.printMessage(Diagnostic.Kind.ERROR, String.format("Passing through with %s unchanged", mirror), ((DeclaredType) mirror).asElement());
                     // nothing was modified, return the type unchanged
-                    return mirror;
+                    return TypeName.get(mirror);
                 } else {
-                    //TODO switch to ClassName since the element doesn't exist yet (we are creating it!)
-                    // need to Specialize the type
-                    TypeElement e = (TypeElement) dt.asElement();
-                    String name = createClassName(e, typeSub);
-                    PackageElement packageName = elementUtils.getPackageOf(e);
-                    String fullElementName = packageName + "." + name;
-                    e = elementUtils.getTypeElement(fullElementName);
-                    if (e == null) {
-                        messager.printMessage(Diagnostic.Kind.ERROR, "Unable to locate type " + fullElementName + "; returning type " + mirror, parameter);
-                        return mirror;
-                    }
-                    return typeUtils.getDeclaredType(e, remaining.toArray(new TypeMirror[0]));
+                    StringBuilder className = new StringBuilder();
+                    replaced.stream().map(e -> ((ClassName) e.box()).simpleName()).forEach(className::append);
+                    className.append(dt.asElement().getSimpleName());
+                    ClassName name =  ClassName.get(elementUtils.getPackageOf(dt.asElement()).toString(), className.toString());
+                    messager.printMessage(Diagnostic.Kind.ERROR, String.format("Replacing %s with %s...", dt, className), dt.asElement());
+                    if (remaining.isEmpty())
+                        return name;
+                    else
+                        return ParameterizedTypeName.get(name, remaining.toArray(new TypeName[0]));
                 }
             }
             case TYPEVAR:
-                // this will work for methods that get their variables from the class
+                // this will work for methods that get their variables from the class;
                 // static methods that infer their own methods won't match
-                if (typeSub.containsKey(mirror))
-                    return typeUtils.getPrimitiveType(typeSub.get(mirror));
+                if (typeSub.containsKey(mirror.toString()))
+                    return typeSub.get(mirror.toString());
                 messager.printMessage(Diagnostic.Kind.ERROR, "Unknown mirror type: " + mirror + "; expected " + typeSub.keySet(), parameter);
-                return mirror;
+                return TypeName.get(mirror);
         }
-        return mirror;
+        return TypeName.get(mirror);
     }
 
     private void printError(Element outerClass) {

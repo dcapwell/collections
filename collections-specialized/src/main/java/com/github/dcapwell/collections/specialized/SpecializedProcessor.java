@@ -7,6 +7,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.squareup.javapoet.*;
+import com.sun.source.util.Trees;
 
 import javax.annotation.processing.*;
 import javax.lang.model.element.*;
@@ -35,6 +36,7 @@ public class SpecializedProcessor extends AbstractProcessor {
     private Elements elementUtils;
     private Filer filer;
     private Messager messager;
+    private Trees trees;
 
     @Override
     public synchronized void init(ProcessingEnvironment processingEnv) {
@@ -43,6 +45,7 @@ public class SpecializedProcessor extends AbstractProcessor {
         this.elementUtils = processingEnv.getElementUtils();
         this.filer = processingEnv.getFiler();
         this.messager = processingEnv.getMessager();
+        this.trees = Trees.instance(processingEnv);
     }
 
     @Override
@@ -86,20 +89,38 @@ public class SpecializedProcessor extends AbstractProcessor {
     }
 
     private JavaFile createSource(TypeElement e, LinkedHashMap<String, TypeName> typeSub) {
+        TypeSpec.Builder spec = createType(e, typeSub);
+        JavaFile javaFile = JavaFile.builder(e.getQualifiedName().toString().replace("." + e.getSimpleName(), ""), spec.build())
+                .build();
+        return javaFile;
+    }
+
+    private TypeSpec.Builder createType(TypeElement e, LinkedHashMap<String, TypeName> typeSub) {
         String name = createClassName(e, typeSub);
         TypeSpec.Builder spec = e.getKind() == ElementKind.CLASS? TypeSpec.classBuilder(name) : TypeSpec.interfaceBuilder(name);
         spec.addModifiers(e.getModifiers().toArray(new Modifier[0]));
+        spec.addSuperinterfaces(e.getInterfaces().stream().map(i -> replace(i, typeSub, e)).collect(Collectors.toList()));
+        if (e.getKind() == ElementKind.CLASS)
+            spec.superclass(TypeName.get(e.getSuperclass()));
         for (Element elem : e.getEnclosedElements()) {
             switch (elem.getKind()) {
                 case CONSTRUCTOR:
                 case METHOD:
                     spec.addMethod(createMethod((ExecutableElement) elem, typeSub));
                     break;
+                case CLASS:
+                    TypeSpec.Builder type = createType((TypeElement) elem, typeSub);
+                    spec.addType(type.build());
+                    break;
+                case FIELD:
+                    VariableElement var = (VariableElement) elem;
+                    FieldSpec.Builder builder = FieldSpec.builder(replace(var.asType(), typeSub, elem), var.getSimpleName().toString());
+                    builder.addModifiers(elem.getModifiers().toArray(new Modifier[0]));
+                    messager.printMessage(Diagnostic.Kind.ERROR, "A const value is found: " + elementUtils.getConstantExpression(var), var);
+                    spec.addField(builder.build());
+                    break;
             }
-        }
-        JavaFile javaFile = JavaFile.builder(e.getQualifiedName().toString().replace("." + e.getSimpleName(), ""), spec.build())
-                .build();
-        return javaFile;
+        } return spec;
     }
 
     private static String createClassName(TypeElement e, LinkedHashMap<?, TypeName> typeSub) {
@@ -132,6 +153,7 @@ public class SpecializedProcessor extends AbstractProcessor {
         }
         methodBuilder.addTypeVariables(method.getTypeParameters().stream().filter(e -> !typeSub.containsKey(e.toString())).<TypeVariableName>map(TypeVariableName::get).collect(Collectors.toList()));
 
+
         return methodBuilder.build();
     }
 
@@ -151,7 +173,6 @@ public class SpecializedProcessor extends AbstractProcessor {
                     }
                 }
                 if (replaced.isEmpty()) {
-                    messager.printMessage(Diagnostic.Kind.ERROR, String.format("Passing through with %s unchanged", mirror), ((DeclaredType) mirror).asElement());
                     // nothing was modified, return the type unchanged
                     return TypeName.get(mirror);
                 } else {
@@ -159,7 +180,6 @@ public class SpecializedProcessor extends AbstractProcessor {
                     replaced.stream().map(e -> ((ClassName) e.box()).simpleName()).forEach(className::append);
                     className.append(dt.asElement().getSimpleName());
                     ClassName name =  ClassName.get(elementUtils.getPackageOf(dt.asElement()).toString(), className.toString());
-                    messager.printMessage(Diagnostic.Kind.ERROR, String.format("Replacing %s with %s...", dt, className), dt.asElement());
                     if (remaining.isEmpty())
                         return name;
                     else
@@ -171,7 +191,6 @@ public class SpecializedProcessor extends AbstractProcessor {
                 // static methods that infer their own methods won't match
                 if (typeSub.containsKey(mirror.toString()))
                     return typeSub.get(mirror.toString());
-                messager.printMessage(Diagnostic.Kind.ERROR, "Unknown mirror type: " + mirror + "; expected " + typeSub.keySet(), parameter);
                 return TypeName.get(mirror);
         }
         return TypeName.get(mirror);

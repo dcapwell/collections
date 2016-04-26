@@ -2,9 +2,7 @@ package com.github.dcapwell.collections;
 
 import com.github.dcapwell.collections.specialized.Specialized;
 
-import java.util.Iterator;
-
-@Specialized
+//@Specialized
 public abstract class ConsList<A> implements Iterable<A> {
     private ConsList() {}
 

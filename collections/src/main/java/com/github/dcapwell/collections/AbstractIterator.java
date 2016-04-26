@@ -1,7 +1,8 @@
 package com.github.dcapwell.collections;
 
-import java.util.Iterator;
+import com.github.dcapwell.collections.specialized.Specialized;
 
+@Specialized
 public abstract class AbstractIterator<A> implements Iterator<A> {
     private State state = State.REMAINING;
     private A next;
@@ -21,7 +22,11 @@ public abstract class AbstractIterator<A> implements Iterator<A> {
     }
 
     private boolean tryComputeNext() {
-        next = computeNext();
+        try {
+            next = computeNext();
+        } catch (EndOfData e) {
+            return false;
+        }
         return state == State.REMAINING;
     }
 
@@ -34,6 +39,10 @@ public abstract class AbstractIterator<A> implements Iterator<A> {
 
     protected final A endOfData() {
         state = State.DONE;
-        return null;
+        throw new EndOfData();
+    }
+
+    private static final class EndOfData extends RuntimeException {
+        private static final EndOfData instance = new EndOfData();
     }
 }

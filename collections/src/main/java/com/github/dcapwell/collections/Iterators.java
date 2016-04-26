@@ -1,7 +1,5 @@
 package com.github.dcapwell.collections;
 
-import java.util.Iterator;
-
 public final class Iterators {
     private Iterators() {}
 
@@ -9,7 +7,7 @@ public final class Iterators {
         return (Iterator<A>) EmptyIterator.instance;
     }
 
-    public static String toString(Iterator<?> it) {
+    public static <A> String toString(Iterator<A> it) {
         StringBuilder sb = new StringBuilder("[");
         while (it.hasNext()) {
             sb.append(it.next()).append(',');
